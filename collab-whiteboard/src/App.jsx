@@ -1,13 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Rect, Transformer } from 'react-konva';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 
 const COLORS = ['#378ADD', '#D85A30', '#639922', '#D4537E', '#2C2C2A'];
 
+// --- Get room name from URL, default to "default-room" if none given ---
+function getRoomFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('room') || 'default-room';
+}
+
+const roomName = getRoomFromURL();
+
+// --- Yjs setup (created once, outside the component, so it persists across re-renders) ---
+const ydoc = new Y.Doc();
+const provider = new WebsocketProvider('ws://localhost:1234', roomName, ydoc);
+const yShapesMap = ydoc.getMap('shapes');
+const undoManager = new Y.UndoManager(yShapesMap);
+
 function App() {
-  const [shapes, setShapesState] = useState([
-    { id: 1, x: 50, y: 50, width: 100, height: 80, fill: '#378ADD' },
-  ]);
+  const [shapes, setShapesLocal] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [connected, setConnected] = useState(false);
 
   const [size, setSize] = useState({
     width: window.innerWidth - 40,
@@ -17,34 +32,23 @@ function App() {
   const shapeRefs = useRef({});
   const transformerRef = useRef();
 
-  // --- Undo/redo history ---
-  const historyRef = useRef([shapes]); // array of past shape-array snapshots
-  const historyIndexRef = useRef(0);   // where we currently are in that array
-
-  function setShapes(newShapes, { recordHistory = true } = {}) {
-    setShapesState(newShapes);
-    if (recordHistory) {
-      
-      const newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
-      newHistory.push(newShapes);
-      historyRef.current = newHistory;
-      historyIndexRef.current = newHistory.length - 1;
+  useEffect(() => {
+    function syncFromYjs() {
+      const shapesArray = Array.from(yShapesMap.values());
+      setShapesLocal(shapesArray);
     }
-  }
+    yShapesMap.observe(syncFromYjs);
+    syncFromYjs();
+    return () => yShapesMap.unobserve(syncFromYjs);
+  }, []);
 
-  function undo() {
-    if (historyIndexRef.current <= 0) return;
-    historyIndexRef.current -= 1;
-    setShapesState(historyRef.current[historyIndexRef.current]);
-    setSelectedId(null);
-  }
-
-  function redo() {
-    if (historyIndexRef.current >= historyRef.current.length - 1) return;
-    historyIndexRef.current += 1;
-    setShapesState(historyRef.current[historyIndexRef.current]);
-    setSelectedId(null);
-  }
+  useEffect(() => {
+    function handleStatus(event) {
+      setConnected(event.status === 'connected');
+    }
+    provider.on('status', handleStatus);
+    return () => provider.off('status', handleStatus);
+  }, []);
 
   useEffect(() => {
     function handleResize() {
@@ -66,61 +70,17 @@ function App() {
     }
   }, [selectedId]);
 
-  // Load saved shapes on first render
-useEffect(() => {
-  const saved = localStorage.getItem('whiteboard-shapes');
-  if (saved) {
-    const parsedShapes = JSON.parse(saved);
-    setShapesState(parsedShapes);
-    historyRef.current = [parsedShapes];
-    historyIndexRef.current = 0;
-  }
-}, []);
-
-// Save shapes whenever they change
-useEffect(() => {
-  localStorage.setItem('whiteboard-shapes', JSON.stringify(shapes));
-}, [shapes]);// Load saved shapes on first render
-useEffect(() => {
-  const saved = localStorage.getItem('whiteboard-shapes');
-  if (saved) {
-    const parsedShapes = JSON.parse(saved);
-    setShapesState(parsedShapes);
-    historyRef.current = [parsedShapes];
-    historyIndexRef.current = 0;
-  }
-}, []);
-
-const [hydrated, setHydrated] = useState(false);
-
-// Load saved shapes on first render
-useEffect(() => {
-  const saved = localStorage.getItem('whiteboard-shapes');
-  if (saved) {
-    const parsedShapes = JSON.parse(saved);
-    setShapesState(parsedShapes);
-    historyRef.current = [parsedShapes];
-    historyIndexRef.current = 0;
-  }
-  setHydrated(true);
-}, []);
-
-// Save shapes whenever they change — but only after loading has finished
-useEffect(() => {
-  if (!hydrated) return;
-  localStorage.setItem('whiteboard-shapes', JSON.stringify(shapes));
-}, [shapes, hydrated]);
-
   function addShape() {
+    const id = String(Date.now());
     const newShape = {
-      id: Date.now(),
+      id,
       x: 100,
       y: 100,
       width: 100,
       height: 80,
       fill: '#D85A30',
     };
-    setShapes([...shapes, newShape]);
+    yShapesMap.set(id, newShape);
   }
 
   function handleStageClick(e) {
@@ -131,16 +91,23 @@ useEffect(() => {
 
   function changeColor(color) {
     if (!selectedId) return;
-    setShapes(
-      shapes.map((shape) =>
-        shape.id === selectedId ? { ...shape, fill: color } : shape
-      )
-    );
+    const shape = yShapesMap.get(selectedId);
+    if (shape) {
+      yShapesMap.set(selectedId, { ...shape, fill: color });
+    }
+  }
+
+  function undo() {
+    undoManager.undo();
+  }
+
+  function redo() {
+    undoManager.redo();
   }
 
   function deleteSelected() {
     if (!selectedId) return;
-    setShapes(shapes.filter((shape) => shape.id !== selectedId));
+    yShapesMap.delete(selectedId);
     setSelectedId(null);
   }
 
@@ -153,24 +120,31 @@ useEffect(() => {
     node.scaleX(1);
     node.scaleY(1);
 
-    setShapes(
-      shapes.map((shape) =>
-        shape.id === id
-          ? {
-              ...shape,
-              x: node.x(),
-              y: node.y(),
-              width: Math.max(20, node.width() * scaleX),
-              height: Math.max(20, node.height() * scaleY),
-            }
-          : shape
-      )
-    );
+    const shape = yShapesMap.get(id);
+    if (shape) {
+      yShapesMap.set(id, {
+        ...shape,
+        x: node.x(),
+        y: node.y(),
+        width: Math.max(20, node.width() * scaleX),
+        height: Math.max(20, node.height() * scaleY),
+      });
+    }
+  }
+
+  function handleDragEnd(id, node) {
+    const shape = yShapesMap.get(id);
+    if (shape) {
+      yShapesMap.set(id, { ...shape, x: node.x(), y: node.y() });
+    }
   }
 
   return (
     <div>
-      <h1>My Whiteboard Project</h1>
+      <h1>My Whiteboard Project — Room: {roomName}</h1>
+      <p style={{ color: connected ? 'green' : 'red' }}>
+        {connected ? 'Connected to server' : 'Disconnected'}
+      </p>
       <button onClick={addShape}>Add Rectangle</button>
       {' '}
       {COLORS.map((color) => (
@@ -209,14 +183,7 @@ useEffect(() => {
               draggable
               onClick={() => setSelectedId(shape.id)}
               onTap={() => setSelectedId(shape.id)}
-              onDragEnd={(e) => {
-                const node = e.target;
-                setShapes(
-                  shapes.map((s) =>
-                    s.id === shape.id ? { ...s, x: node.x(), y: node.y() } : s
-                  )
-                );
-              }}
+              onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
               onTransformEnd={() => handleTransformEnd(shape.id)}
             />
           ))}
