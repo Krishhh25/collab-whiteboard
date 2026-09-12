@@ -14,7 +14,7 @@ wss.on('connection', (ws, req) => {
   setupWSConnection(ws, req);
 });
 
-const PORT = 1234;
+const PORT = process.env.PORT || 1234;
 server.listen(PORT, () => {
   console.log(`Whiteboard sync server running on ws://localhost:${PORT}`);
 });
