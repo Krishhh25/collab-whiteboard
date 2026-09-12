@@ -13,7 +13,6 @@ function getRoomFromURL() {
 
 const roomName = getRoomFromURL();
 
-// --- Yjs setup (created once, outside the component, so it persists across re-renders) ---
 const ydoc = new Y.Doc();
 const provider = new WebsocketProvider('ws://localhost:1234', roomName, ydoc);
 const yShapesMap = ydoc.getMap('shapes');
