@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { Stage, Layer, Rect, Transformer } from 'react-konva';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
@@ -23,6 +23,7 @@ function App() {
   const [shapes, setShapesLocal] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [remoteCursors, setRemoteCursors] = useState([]);
 
   const [size, setSize] = useState({
     width: window.innerWidth - 40,
@@ -31,6 +32,39 @@ function App() {
 
   const shapeRefs = useRef({});
   const transformerRef = useRef();
+
+  // --- Broadcast my own cursor position ---
+  useEffect(() => {
+    const userName = 'User-' + Math.floor(Math.random() * 1000);
+    const userColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+    provider.awareness.setLocalStateField('user', { name: userName, color: userColor });
+
+    return () => {
+      provider.awareness.setLocalStateField('user', null);
+    };
+  }, []);
+
+  // --- Listen for other users' cursor positions ---
+  useEffect(() => {
+    function updateCursors() {
+      const states = Array.from(provider.awareness.getStates().entries());
+      const others = states
+        .filter(([clientId]) => clientId !== provider.awareness.clientID)
+        .filter(([, state]) => state.cursor)
+        .map(([clientId, state]) => ({
+          clientId,
+          x: state.cursor.x,
+          y: state.cursor.y,
+          name: state.user?.name || 'User',
+          color: state.user?.color || '#000',
+        }));
+      setRemoteCursors(others);
+    }
+
+    provider.awareness.on('change', updateCursors);
+    return () => provider.awareness.off('change', updateCursors);
+  }, []);
 
   useEffect(() => {
     function syncFromYjs() {
@@ -87,6 +121,11 @@ function App() {
     if (e.target === e.target.getStage()) {
       setSelectedId(null);
     }
+  }
+
+  function handleMouseMove(e) {
+    const pos = e.target.getStage().getPointerPosition();
+    provider.awareness.setLocalStateField('cursor', pos);
   }
 
   function changeColor(color) {
@@ -167,6 +206,7 @@ function App() {
         height={size.height}
         style={{ border: '1px solid #ccc' }}
         onMouseDown={handleStageClick}
+        onMouseMove={handleMouseMove}
       >
         <Layer>
           {shapes.map((shape) => (
@@ -187,6 +227,21 @@ function App() {
               onTransformEnd={() => handleTransformEnd(shape.id)}
             />
           ))}
+
+          {remoteCursors.map((cursor) => (
+            <Fragment key={cursor.clientId}>
+              <Rect
+                x={cursor.x - 5}
+                y={cursor.y - 5}
+                width={10}
+                height={10}
+                fill={cursor.color}
+                cornerRadius={5}
+                listening={false}
+              />
+            </Fragment>
+          ))}
+
           <Transformer ref={transformerRef} />
         </Layer>
       </Stage>
