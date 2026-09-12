@@ -14,7 +14,11 @@ function getRoomFromURL() {
 const roomName = getRoomFromURL();
 
 const ydoc = new Y.Doc();
-const provider = new WebsocketProvider('ws://localhost:1234', roomName, ydoc);
+const WS_URL = import.meta.env.PROD
+  ? 'wss://collab-whiteboard-1-pwqv.onrender.com'
+  : 'ws://localhost:1234';
+
+const provider = new WebsocketProvider(WS_URL, roomName, ydoc);
 const yShapesMap = ydoc.getMap('shapes');
 const undoManager = new Y.UndoManager(yShapesMap);
 
