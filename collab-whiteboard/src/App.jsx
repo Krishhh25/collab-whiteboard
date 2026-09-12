@@ -13,11 +13,13 @@ function getRoomFromURL() {
 
 const roomName = getRoomFromURL();
 
-const ydoc = new Y.Doc();
+// --- Backend URL: local server during dev, deployed Render server in production ---
 const WS_URL = import.meta.env.PROD
   ? 'wss://collab-whiteboard-1-pwqv.onrender.com'
   : 'ws://localhost:1234';
 
+// --- Yjs setup (created once, outside the component, so it persists across re-renders) ---
+const ydoc = new Y.Doc();
 const provider = new WebsocketProvider(WS_URL, roomName, ydoc);
 const yShapesMap = ydoc.getMap('shapes');
 const undoManager = new Y.UndoManager(yShapesMap);
@@ -29,12 +31,29 @@ function App() {
   const [remoteCursors, setRemoteCursors] = useState([]);
 
   const [size, setSize] = useState({
-    width: window.innerWidth - 40,
-    height: window.innerHeight - 150,
+    width: window.innerWidth - 20,
+    height: window.innerHeight * 0.6,
   });
 
   const shapeRefs = useRef({});
   const transformerRef = useRef();
+
+  // --- Responsive sizing (handles mobile resize/orientation change too) ---
+  useEffect(() => {
+    function handleResize() {
+      setSize({
+        width: window.innerWidth - 20,
+        height: window.innerHeight * 0.6,
+      });
+    }
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
 
   // --- Broadcast my own cursor position ---
   useEffect(() => {
@@ -69,6 +88,7 @@ function App() {
     return () => provider.awareness.off('change', updateCursors);
   }, []);
 
+  // --- Sync React state FROM the Yjs map whenever it changes (local or remote) ---
   useEffect(() => {
     function syncFromYjs() {
       const shapesArray = Array.from(yShapesMap.values());
@@ -79,6 +99,7 @@ function App() {
     return () => yShapesMap.unobserve(syncFromYjs);
   }, []);
 
+  // --- Track connection status ---
   useEffect(() => {
     function handleStatus(event) {
       setConnected(event.status === 'connected');
@@ -87,17 +108,7 @@ function App() {
     return () => provider.off('status', handleStatus);
   }, []);
 
-  useEffect(() => {
-    function handleResize() {
-      setSize({
-        width: window.innerWidth - 40,
-        height: window.innerHeight - 150,
-      });
-    }
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  // --- Attach/detach the Transformer to the selected shape ---
   useEffect(() => {
     if (selectedId && shapeRefs.current[selectedId]) {
       transformerRef.current.nodes([shapeRefs.current[selectedId]]);
