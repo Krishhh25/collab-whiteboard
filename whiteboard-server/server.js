@@ -1,4 +1,3 @@
-process.env.YPERSISTENCE = './storage';
 const WebSocket = require('ws');
 const http = require('http');
 const { setupWSConnection } = require('y-websocket/bin/utils');
