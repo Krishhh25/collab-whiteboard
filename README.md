@@ -6,6 +6,20 @@ A real time collaborative board where multiple users can draw, create shapes, an
 
 *(Note: the backend runs on Render's free tier, so it might take 20-30 seconds to connect to the server)*
 
+Why I Built This
+
+Real-time collaborative tools (Miro, Figma, Google Docs) solve a genuinely hard problem: how do you let multiple people edit the same thing at the same time, from different locations, without their changes overwriting or corrupting each other? I wanted to understand what actually happens inside of tools I use every day for group work and remote collaboration.
+
+I built this specifically to learn:
+
+How real-time sync actually works not just calling an API, but understanding WebSockets, and how a server keeps multiple clients consistent with each other
+Conflict resolution in distributed systems what happens when two people edit the same object at the same instant, and why "last write wins" isn't always good enough. This led me to CRDTs (Conflict-free Replicated Data Types) via Yjs, which solve this problem mathematically rather than through ad-hoc rules
+The difference between persisted and ephemeral state shapes on the board need to be saved permanently, but a live cursor position shouldn't be. Learning Yjs's separate Awareness API for this was a genuinely useful distinction I hadn't thought about before
+Real deployment and debugging I hit and fixed real issues along the way: a breaking change in a package's export paths between versions, port conflicts during local development, and getting WebSockets working correctly in production (which behaves differently than local ws:// connections)
+What Problem This Solves
+
+The core problem: teams need to visually think together even when they're not in the same room — sprint planning, system design sketches, brainstorming, tutoring. This project demonstrates the specific hard parts of solving that: conflict-free simultaneous editing, live presence (knowing who else is active), state consistency across disconnects/reconnects, and isolated sessions so unrelated groups don't collide.
+
 ## Features
 
 - **Shape tools**: add, select, recolor, resize, drag, and delete rectangles
