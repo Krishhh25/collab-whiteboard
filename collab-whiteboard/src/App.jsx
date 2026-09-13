@@ -5,6 +5,10 @@ import { WebsocketProvider } from 'y-websocket';
 
 const COLORS = ['#378ADD', '#D85A30', '#639922', '#D4537E', '#2C2C2A'];
 
+// --- Fixed logical canvas size (same on every device — content never changes size) ---
+const CANVAS_WIDTH = 1200;
+const CANVAS_HEIGHT = 800;
+
 // --- Get room name from URL, default to "default-room" if none given ---
 function getRoomFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -29,22 +33,17 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [connected, setConnected] = useState(false);
   const [remoteCursors, setRemoteCursors] = useState([]);
-
-  const [size, setSize] = useState({
-    width: window.innerWidth - 20,
-    height: window.innerHeight * 0.6,
-  });
+  const [scale, setScale] = useState(1);
 
   const shapeRefs = useRef({});
   const transformerRef = useRef();
 
-  // --- Responsive sizing (handles mobile resize/orientation change too) ---
+  // --- Fit-to-screen scaling: shrink the fixed-size canvas to fit smaller screens ---
   useEffect(() => {
     function handleResize() {
-      setSize({
-        width: window.innerWidth - 20,
-        height: window.innerHeight * 0.6,
-      });
+      const availableWidth = window.innerWidth - 20;
+      const newScale = Math.min(1, availableWidth / CANVAS_WIDTH);
+      setScale(newScale);
     }
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -216,8 +215,10 @@ function App() {
       <button onClick={redo}>Redo</button>
 
       <Stage
-        width={size.width}
-        height={size.height}
+        width={CANVAS_WIDTH * scale}
+        height={CANVAS_HEIGHT * scale}
+        scaleX={scale}
+        scaleY={scale}
         style={{ border: '1px solid #ccc' }}
         onMouseDown={handleStageClick}
         onMouseMove={handleMouseMove}
