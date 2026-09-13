@@ -6,7 +6,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Whiteboard sync server is running');
 });
-
+// server not live 
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws, req) => {
