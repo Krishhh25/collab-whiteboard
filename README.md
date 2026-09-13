@@ -78,7 +78,7 @@ The core problem: teams need to visually think together even when they're not in
               │  (disk)     │
               │  persistence│
               └─────────────┘
-``
+```
 
 Each browser holds a local `Y.Doc` — a CRDT-backed shared document. Every shape/stroke edit is applied to a `Y.Map` inside that doc. The `y-websocket` client automatically syncs changes to the server, which merges updates from all connected clients and re-broadcasts them. Because Yjs's CRDT guarantees convergence, two users can edit the same or different shapes at the same time without a central "who wins" conflict resolution step — the library handles merging automatically.
 
