@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { Stage, Layer, Rect, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Line, Transformer } from 'react-konva';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
@@ -35,8 +35,16 @@ function App() {
   const [remoteCursors, setRemoteCursors] = useState([]);
   const [scale, setScale] = useState(1);
 
+  // --- Tool mode: 'select' (default, move/resize shapes) or 'pen' (freehand draw) ---
+  const [toolMode, setToolMode] = useState('select');
+  const [penColor, setPenColor] = useState(COLORS[4]); // default to dark color for drawing
+
   const shapeRefs = useRef({});
   const transformerRef = useRef();
+
+  // --- Refs to track an in-progress pen stroke without triggering re-renders per point ---
+  const isDrawingRef = useRef(false);
+  const currentLineIdRef = useRef(null);
 
   // --- Fit-to-screen scaling: shrink the fixed-size canvas to fit smaller screens ---
   useEffect(() => {
@@ -107,7 +115,7 @@ function App() {
     return () => provider.off('status', handleStatus);
   }, []);
 
-  // --- Attach/detach the Transformer to the selected shape ---
+  // --- Attach/detach the Transformer to the selected shape (only for rects, not pen lines) ---
   useEffect(() => {
     if (selectedId && shapeRefs.current[selectedId]) {
       transformerRef.current.nodes([shapeRefs.current[selectedId]]);
@@ -121,6 +129,7 @@ function App() {
     const id = String(Date.now());
     const newShape = {
       id,
+      type: 'rect',
       x: 100,
       y: 100,
       width: 100,
@@ -130,18 +139,60 @@ function App() {
     yShapesMap.set(id, newShape);
   }
 
-  function handleStageClick(e) {
+  // --- Stage pointer handlers: behavior depends on current tool mode ---
+  function handleStageMouseDown(e) {
+    if (toolMode === 'pen') {
+      const pos = e.target.getStage().getPointerPosition();
+      const id = String(Date.now());
+      const newLine = {
+        id,
+        type: 'pen',
+        points: [pos.x, pos.y],
+        stroke: penColor,
+        strokeWidth: 4,
+      };
+      yShapesMap.set(id, newLine);
+      isDrawingRef.current = true;
+      currentLineIdRef.current = id;
+      return;
+    }
+
+    // Select mode: clicking empty canvas deselects
     if (e.target === e.target.getStage()) {
       setSelectedId(null);
     }
   }
 
-  function handleMouseMove(e) {
+  function handleStageMouseMove(e) {
     const pos = e.target.getStage().getPointerPosition();
+
+    // Always broadcast cursor position for presence, regardless of tool
     provider.awareness.setLocalStateField('cursor', pos);
+
+    // If actively drawing a pen stroke, append the new point and sync immediately
+    if (toolMode === 'pen' && isDrawingRef.current && currentLineIdRef.current) {
+      const line = yShapesMap.get(currentLineIdRef.current);
+      if (line) {
+        yShapesMap.set(currentLineIdRef.current, {
+          ...line,
+          points: [...line.points, pos.x, pos.y],
+        });
+      }
+    }
+  }
+
+  function handleStageMouseUp() {
+    if (toolMode === 'pen') {
+      isDrawingRef.current = false;
+      currentLineIdRef.current = null;
+    }
   }
 
   function changeColor(color) {
+    if (toolMode === 'pen') {
+      setPenColor(color);
+      return;
+    }
     if (!selectedId) return;
     const shape = yShapesMap.get(selectedId);
     if (shape) {
@@ -197,13 +248,33 @@ function App() {
       <p style={{ color: connected ? 'green' : 'red' }}>
         {connected ? 'Connected to server' : 'Disconnected'}
       </p>
+
       <button onClick={addShape}>Add Rectangle</button>
+      {' '}
+      <button
+        onClick={() => setToolMode('select')}
+        style={{ fontWeight: toolMode === 'select' ? 'bold' : 'normal' }}
+      >
+        Select
+      </button>
+      <button
+        onClick={() => setToolMode('pen')}
+        style={{ fontWeight: toolMode === 'pen' ? 'bold' : 'normal' }}
+      >
+        Pen
+      </button>
       {' '}
       {COLORS.map((color) => (
         <button
           key={color}
           onClick={() => changeColor(color)}
-          style={{ backgroundColor: color, width: 24, height: 24, marginLeft: 4 }}
+          style={{
+            backgroundColor: color,
+            width: 24,
+            height: 24,
+            marginLeft: 4,
+            border: (toolMode === 'pen' ? penColor : null) === color ? '2px solid black' : 'none',
+          }}
         />
       ))}
       {' '}
@@ -219,29 +290,51 @@ function App() {
         height={CANVAS_HEIGHT * scale}
         scaleX={scale}
         scaleY={scale}
-        style={{ border: '1px solid #ccc' }}
-        onMouseDown={handleStageClick}
-        onMouseMove={handleMouseMove}
+        style={{ border: '1px solid #ccc', touchAction: 'none' }}
+        onMouseDown={handleStageMouseDown}
+        onMouseMove={handleStageMouseMove}
+        onMouseUp={handleStageMouseUp}
+        onTouchStart={handleStageMouseDown}
+        onTouchMove={handleStageMouseMove}
+        onTouchEnd={handleStageMouseUp}
       >
         <Layer>
-          {shapes.map((shape) => (
-            <Rect
-              key={shape.id}
-              ref={(node) => {
-                if (node) shapeRefs.current[shape.id] = node;
-              }}
-              x={shape.x}
-              y={shape.y}
-              width={shape.width}
-              height={shape.height}
-              fill={shape.fill}
-              draggable
-              onClick={() => setSelectedId(shape.id)}
-              onTap={() => setSelectedId(shape.id)}
-              onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
-              onTransformEnd={() => handleTransformEnd(shape.id)}
-            />
-          ))}
+          {shapes.map((shape) => {
+            if (shape.type === 'pen') {
+              return (
+                <Line
+                  key={shape.id}
+                  points={shape.points}
+                  stroke={shape.stroke}
+                  strokeWidth={shape.strokeWidth}
+                  tension={0.4}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+              );
+            }
+
+            // Default: rectangle
+            return (
+              <Rect
+                key={shape.id}
+                ref={(node) => {
+                  if (node) shapeRefs.current[shape.id] = node;
+                }}
+                x={shape.x}
+                y={shape.y}
+                width={shape.width}
+                height={shape.height}
+                fill={shape.fill}
+                draggable={toolMode === 'select'}
+                onClick={() => toolMode === 'select' && setSelectedId(shape.id)}
+                onTap={() => toolMode === 'select' && setSelectedId(shape.id)}
+                onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
+                onTransformEnd={() => handleTransformEnd(shape.id)}
+              />
+            );
+          })}
 
           {remoteCursors.map((cursor) => (
             <Fragment key={cursor.clientId}>
