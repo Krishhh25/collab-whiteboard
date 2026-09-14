@@ -5,11 +5,9 @@ import { WebsocketProvider } from 'y-websocket';
 
 const COLORS = ['#378ADD', '#D85A30', '#639922', '#D4537E', '#2C2C2A'];
 
-// --- Fixed logical canvas size (same on every device — content never changes size) ---
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 800;
 
-// --- Get room name from URL, default to "default-room" if none given ---
 function getRoomFromURL() {
   const params = new URLSearchParams(window.location.search);
   return params.get('room') || 'default-room';
@@ -17,12 +15,10 @@ function getRoomFromURL() {
 
 const roomName = getRoomFromURL();
 
-// --- Backend URL: local server during dev, deployed Render server in production ---
 const WS_URL = import.meta.env.PROD
   ? 'wss://collab-whiteboard-1-pwqv.onrender.com'
   : 'ws://localhost:1234';
 
-// --- Yjs setup (created once, outside the component, so it persists across re-renders) ---
 const ydoc = new Y.Doc();
 const provider = new WebsocketProvider(WS_URL, roomName, ydoc);
 const yShapesMap = ydoc.getMap('shapes');
@@ -33,25 +29,28 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [connected, setConnected] = useState(false);
   const [remoteCursors, setRemoteCursors] = useState([]);
-  const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
 
-  // --- Tool mode: 'select' (default, move/resize shapes) or 'pen' (freehand draw) ---
   const [toolMode, setToolMode] = useState('select');
-  const [penColor, setPenColor] = useState(COLORS[4]); // default to dark color for drawing
+  const [penColor, setPenColor] = useState(COLORS[4]);
+
+  // --- Pan & zoom state ---
+  const [zoom, setZoom] = useState(1);
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+  const isPanningRef = useRef(false);
+  const lastPanPointRef = useRef({ x: 0, y: 0 });
 
   const shapeRefs = useRef({});
   const transformerRef = useRef();
 
-  // --- Refs to track an in-progress pen stroke without triggering re-renders per point ---
   const isDrawingRef = useRef(false);
   const currentLineIdRef = useRef(null);
 
-  // --- Fit-to-screen scaling: shrink the fixed-size canvas to fit smaller screens ---
   useEffect(() => {
     function handleResize() {
       const availableWidth = window.innerWidth - 20;
       const newScale = Math.min(1, availableWidth / CANVAS_WIDTH);
-      setScale(newScale);
+      setFitScale(newScale);
     }
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -62,19 +61,15 @@ function App() {
     };
   }, []);
 
-  // --- Broadcast my own cursor position ---
   useEffect(() => {
     const userName = 'User-' + Math.floor(Math.random() * 1000);
     const userColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-
     provider.awareness.setLocalStateField('user', { name: userName, color: userColor });
-
     return () => {
       provider.awareness.setLocalStateField('user', null);
     };
   }, []);
 
-  // --- Listen for other users' cursor positions ---
   useEffect(() => {
     function updateCursors() {
       const states = Array.from(provider.awareness.getStates().entries());
@@ -90,12 +85,10 @@ function App() {
         }));
       setRemoteCursors(others);
     }
-
     provider.awareness.on('change', updateCursors);
     return () => provider.awareness.off('change', updateCursors);
   }, []);
 
-  // --- Sync React state FROM the Yjs map whenever it changes (local or remote) ---
   useEffect(() => {
     function syncFromYjs() {
       const shapesArray = Array.from(yShapesMap.values());
@@ -106,7 +99,6 @@ function App() {
     return () => yShapesMap.unobserve(syncFromYjs);
   }, []);
 
-  // --- Track connection status ---
   useEffect(() => {
     function handleStatus(event) {
       setConnected(event.status === 'connected');
@@ -115,7 +107,6 @@ function App() {
     return () => provider.off('status', handleStatus);
   }, []);
 
-  // --- Attach/detach the Transformer to the selected shape (only for rects, not pen lines) ---
   useEffect(() => {
     if (selectedId && shapeRefs.current[selectedId]) {
       transformerRef.current.nodes([shapeRefs.current[selectedId]]);
@@ -139,10 +130,44 @@ function App() {
     yShapesMap.set(id, newShape);
   }
 
-  // --- Stage pointer handlers: behavior depends on current tool mode ---
+  // --- Zoom: mouse wheel, centered on cursor position ---
+  function handleWheel(e) {
+    e.evt.preventDefault();
+    const stage = e.target.getStage();
+    const oldZoom = zoom;
+    const pointer = stage.getPointerPosition();
+
+    // Position of the pointer relative to the canvas content, before zoom
+    const mousePointTo = {
+      x: (pointer.x - stagePos.x) / oldZoom,
+      y: (pointer.y - stagePos.y) / oldZoom,
+    };
+
+    const direction = e.evt.deltaY > 0 ? -1 : 1;
+    const zoomFactor = 1.05;
+    let newZoom = direction > 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor;
+    newZoom = Math.max(0.3, Math.min(3, newZoom)); // clamp zoom between 30% and 300%
+
+    const newPos = {
+      x: pointer.x - mousePointTo.x * newZoom,
+      y: pointer.y - mousePointTo.y * newZoom,
+    };
+
+    setZoom(newZoom);
+    setStagePos(newPos);
+  }
+
+  // --- Pan: drag on empty canvas (select mode only) ---
   function handleStageMouseDown(e) {
+    const clickedOnEmpty = e.target === e.target.getStage();
+
     if (toolMode === 'pen') {
-      const pos = e.target.getStage().getPointerPosition();
+      const stage = e.target.getStage();
+      const pointer = stage.getPointerPosition();
+      const pos = {
+        x: (pointer.x - stagePos.x) / zoom,
+        y: (pointer.y - stagePos.y) / zoom,
+      };
       const id = String(Date.now());
       const newLine = {
         id,
@@ -157,27 +182,41 @@ function App() {
       return;
     }
 
-    // Select mode: clicking empty canvas deselects
-    if (e.target === e.target.getStage()) {
+    if (clickedOnEmpty) {
       setSelectedId(null);
+      isPanningRef.current = true;
+      const stage = e.target.getStage();
+      lastPanPointRef.current = stage.getPointerPosition();
     }
   }
 
   function handleStageMouseMove(e) {
-    const pos = e.target.getStage().getPointerPosition();
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
 
-    // Always broadcast cursor position for presence, regardless of tool
-    provider.awareness.setLocalStateField('cursor', pos);
+    // Broadcast cursor position (convert to canvas-space coordinates)
+    const canvasPos = {
+      x: (pointer.x - stagePos.x) / zoom,
+      y: (pointer.y - stagePos.y) / zoom,
+    };
+    provider.awareness.setLocalStateField('cursor', canvasPos);
 
-    // If actively drawing a pen stroke, append the new point and sync immediately
     if (toolMode === 'pen' && isDrawingRef.current && currentLineIdRef.current) {
       const line = yShapesMap.get(currentLineIdRef.current);
       if (line) {
         yShapesMap.set(currentLineIdRef.current, {
           ...line,
-          points: [...line.points, pos.x, pos.y],
+          points: [...line.points, canvasPos.x, canvasPos.y],
         });
       }
+      return;
+    }
+
+    if (isPanningRef.current) {
+      const dx = pointer.x - lastPanPointRef.current.x;
+      const dy = pointer.y - lastPanPointRef.current.y;
+      setStagePos((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastPanPointRef.current = pointer;
     }
   }
 
@@ -186,6 +225,12 @@ function App() {
       isDrawingRef.current = false;
       currentLineIdRef.current = null;
     }
+    isPanningRef.current = false;
+  }
+
+  function resetView() {
+    setZoom(1);
+    setStagePos({ x: 0, y: 0 });
   }
 
   function changeColor(color) {
@@ -242,6 +287,8 @@ function App() {
     }
   }
 
+  const totalScale = fitScale * zoom;
+
   return (
     <div>
       <h1>My Whiteboard Project — Room: {roomName}</h1>
@@ -284,12 +331,17 @@ function App() {
       {' '}
       <button onClick={undo}>Undo</button>
       <button onClick={redo}>Redo</button>
+      {' '}
+      <button onClick={resetView}>Reset View</button>
+      <span style={{ marginLeft: 8, fontSize: 13 }}>{Math.round(zoom * 100)}%</span>
 
       <Stage
-        width={CANVAS_WIDTH * scale}
-        height={CANVAS_HEIGHT * scale}
-        scaleX={scale}
-        scaleY={scale}
+        width={CANVAS_WIDTH * fitScale}
+        height={CANVAS_HEIGHT * fitScale}
+        scaleX={totalScale}
+        scaleY={totalScale}
+        x={stagePos.x}
+        y={stagePos.y}
         style={{ border: '1px solid #ccc', touchAction: 'none' }}
         onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
@@ -297,6 +349,7 @@ function App() {
         onTouchStart={handleStageMouseDown}
         onTouchMove={handleStageMouseMove}
         onTouchEnd={handleStageMouseUp}
+        onWheel={handleWheel}
       >
         <Layer>
           {shapes.map((shape) => {
@@ -315,7 +368,6 @@ function App() {
               );
             }
 
-            // Default: rectangle
             return (
               <Rect
                 key={shape.id}
