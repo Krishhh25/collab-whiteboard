@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import { Stage, Layer, Rect, Line, Transformer } from 'react-konva';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import Auth from './Auth';
 
 const COLORS = ['#378ADD', '#D85A30', '#639922', '#D4537E', '#2C2C2A'];
 
@@ -25,6 +26,7 @@ const yShapesMap = ydoc.getMap('shapes');
 const undoManager = new Y.UndoManager(yShapesMap);
 
 function App() {
+  const [session, setSession] = useState(null);
   const [shapes, setShapesLocal] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [connected, setConnected] = useState(false);
