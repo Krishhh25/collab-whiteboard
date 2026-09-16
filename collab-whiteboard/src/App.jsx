@@ -296,131 +296,163 @@ function App() {
 
   const totalScale = fitScale * zoom;
 
-  return (
-    <div>
-      <Auth onAuthChange={setSession} />
+    return (
+    <div className="app-shell">
+      <div className="toolbar">
+        <span className="toolbar-brand">Whiteboard</span>
+        <span className="toolbar-room">#{roomName}</span>
 
-      <h1>My Whiteboard Project — Room: {roomName}</h1>
-      <p style={{ color: connected ? 'green' : 'red' }}>
-        {connected ? 'Connected to server' : 'Disconnected'}
-      </p>
+        <div className="toolbar-group">
+          <button
+            className={`icon-btn ${toolMode === 'select' ? 'active' : ''}`}
+            onClick={() => setToolMode('select')}
+            title="Select"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+            </svg>
+          </button>
+          <button
+            className={`icon-btn ${toolMode === 'pen' ? 'active' : ''}`}
+            onClick={() => setToolMode('pen')}
+            disabled={!isLoggedIn}
+            title="Pen"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+          </button>
+          <button className="text-btn" onClick={addShape} disabled={!isLoggedIn}>
+            + Rectangle
+          </button>
+        </div>
+
+        <div className="toolbar-group">
+          {COLORS.map((color) => (
+            <button
+              key={color}
+              className={`swatch ${(toolMode === 'pen' ? penColor : null) === color ? 'selected' : ''}`}
+              onClick={() => changeColor(color)}
+              disabled={!isLoggedIn}
+              style={{ backgroundColor: color }}
+              title={color}
+            />
+          ))}
+        </div>
+
+        <div className="toolbar-group">
+          <button className="icon-btn" onClick={undo} disabled={!isLoggedIn} title="Undo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-10 9 9 0 0 0-6 2.3L3 13" />
+            </svg>
+          </button>
+          <button className="icon-btn" onClick={redo} disabled={!isLoggedIn} title="Redo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-10 9 9 0 0 1 6 2.3L21 13" />
+            </svg>
+          </button>
+          <button className="icon-btn" onClick={deleteSelected} disabled={!isLoggedIn || !selectedId} title="Delete">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="toolbar-group">
+          <button className="icon-btn" onClick={resetView} title="Reset view">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+            </svg>
+          </button>
+          <span className="zoom-label">{Math.round(zoom * 100)}%</span>
+        </div>
+
+        <div className="toolbar-spacer" />
+
+        <div className="toolbar-status">
+          <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
+          {connected ? 'Connected' : 'Disconnected'}
+        </div>
+
+        <Auth onAuthChange={setSession} />
+      </div>
+
       {!isLoggedIn && (
-        <p style={{ color: '#888', fontStyle: 'italic' }}>
-          You're viewing in read-only mode. Log in to edit.
-        </p>
+        <div className="readonly-banner">Viewing in read-only mode. Log in to edit.</div>
       )}
 
-      <button onClick={addShape} disabled={!isLoggedIn}>Add Rectangle</button>
-      {' '}
-      <button
-        onClick={() => setToolMode('select')}
-        style={{ fontWeight: toolMode === 'select' ? 'bold' : 'normal' }}
-      >
-        Select
-      </button>
-      <button
-        onClick={() => setToolMode('pen')}
-        disabled={!isLoggedIn}
-        style={{ fontWeight: toolMode === 'pen' ? 'bold' : 'normal' }}
-      >
-        Pen
-      </button>
-      {' '}
-      {COLORS.map((color) => (
-        <button
-          key={color}
-          onClick={() => changeColor(color)}
-          disabled={!isLoggedIn}
-          style={{
-            backgroundColor: color,
-            width: 24,
-            height: 24,
-            marginLeft: 4,
-            border: (toolMode === 'pen' ? penColor : null) === color ? '2px solid black' : 'none',
-          }}
-        />
-      ))}
-      {' '}
-      <button onClick={deleteSelected} disabled={!isLoggedIn || !selectedId}>
-        Delete Selected
-      </button>
-      {' '}
-      <button onClick={undo} disabled={!isLoggedIn}>Undo</button>
-      <button onClick={redo} disabled={!isLoggedIn}>Redo</button>
-      {' '}
-      <button onClick={resetView}>Reset View</button>
-      <span style={{ marginLeft: 8, fontSize: 13 }}>{Math.round(zoom * 100)}%</span>
+      <div className="canvas-wrap">
+        <Stage
+          width={CANVAS_WIDTH * fitScale}
+          height={CANVAS_HEIGHT * fitScale}
+          scaleX={totalScale}
+          scaleY={totalScale}
+          x={stagePos.x}
+          y={stagePos.y}
+          style={{ background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.15)', touchAction: 'none' }}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onMouseUp={handleStageMouseUp}
+          onTouchStart={handleStageMouseDown}
+          onTouchMove={handleStageMouseMove}
+          onTouchEnd={handleStageMouseUp}
+          onWheel={handleWheel}
+        >
+          <Layer>
+            {shapes.map((shape) => {
+              if (shape.type === 'pen') {
+                return (
+                  <Line
+                    key={shape.id}
+                    points={shape.points}
+                    stroke={shape.stroke}
+                    strokeWidth={shape.strokeWidth}
+                    tension={0.4}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                );
+              }
 
-      <Stage
-        width={CANVAS_WIDTH * fitScale}
-        height={CANVAS_HEIGHT * fitScale}
-        scaleX={totalScale}
-        scaleY={totalScale}
-        x={stagePos.x}
-        y={stagePos.y}
-        style={{ border: '1px solid #ccc', touchAction: 'none' }}
-        onMouseDown={handleStageMouseDown}
-        onMouseMove={handleStageMouseMove}
-        onMouseUp={handleStageMouseUp}
-        onTouchStart={handleStageMouseDown}
-        onTouchMove={handleStageMouseMove}
-        onTouchEnd={handleStageMouseUp}
-        onWheel={handleWheel}
-      >
-        <Layer>
-          {shapes.map((shape) => {
-            if (shape.type === 'pen') {
               return (
-                <Line
+                <Rect
                   key={shape.id}
-                  points={shape.points}
-                  stroke={shape.stroke}
-                  strokeWidth={shape.strokeWidth}
-                  tension={0.4}
-                  lineCap="round"
-                  lineJoin="round"
-                  listening={false}
+                  ref={(node) => {
+                    if (node) shapeRefs.current[shape.id] = node;
+                  }}
+                  x={shape.x}
+                  y={shape.y}
+                  width={shape.width}
+                  height={shape.height}
+                  fill={shape.fill}
+                  draggable={toolMode === 'select' && isLoggedIn}
+                  onClick={() => toolMode === 'select' && setSelectedId(shape.id)}
+                  onTap={() => toolMode === 'select' && setSelectedId(shape.id)}
+                  onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
+                  onTransformEnd={() => handleTransformEnd(shape.id)}
                 />
               );
-            }
+            })}
 
-            return (
-              <Rect
-                key={shape.id}
-                ref={(node) => {
-                  if (node) shapeRefs.current[shape.id] = node;
-                }}
-                x={shape.x}
-                y={shape.y}
-                width={shape.width}
-                height={shape.height}
-                fill={shape.fill}
-                draggable={toolMode === 'select' && isLoggedIn}
-                onClick={() => toolMode === 'select' && setSelectedId(shape.id)}
-                onTap={() => toolMode === 'select' && setSelectedId(shape.id)}
-                onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
-                onTransformEnd={() => handleTransformEnd(shape.id)}
-              />
-            );
-          })}
+            {remoteCursors.map((cursor) => (
+              <Fragment key={cursor.clientId}>
+                <Rect
+                  x={cursor.x - 5}
+                  y={cursor.y - 5}
+                  width={10}
+                  height={10}
+                  fill={cursor.color}
+                  cornerRadius={5}
+                  listening={false}
+                />
+              </Fragment>
+            ))}
 
-          {remoteCursors.map((cursor) => (
-            <Fragment key={cursor.clientId}>
-              <Rect
-                x={cursor.x - 5}
-                y={cursor.y - 5}
-                width={10}
-                height={10}
-                fill={cursor.color}
-                cornerRadius={5}
-                listening={false}
-              />
-            </Fragment>
-          ))}
-
-          <Transformer ref={transformerRef} />
-        </Layer>
-      </Stage>
+            <Transformer ref={transformerRef} />
+          </Layer>
+        </Stage>
+      </div>
     </div>
   );
 }
