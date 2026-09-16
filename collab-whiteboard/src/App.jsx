@@ -26,7 +26,6 @@ const yShapesMap = ydoc.getMap('shapes');
 const undoManager = new Y.UndoManager(yShapesMap);
 
 function App() {
-  const [session, setSession] = useState(null);
   const [shapes, setShapesLocal] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -36,11 +35,14 @@ function App() {
   const [toolMode, setToolMode] = useState('select');
   const [penColor, setPenColor] = useState(COLORS[4]);
 
-  // --- Pan & zoom state ---
   const [zoom, setZoom] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const isPanningRef = useRef(false);
   const lastPanPointRef = useRef({ x: 0, y: 0 });
+
+  // --- Auth state ---
+  const [session, setSession] = useState(null);
+  const isLoggedIn = !!session;
 
   const shapeRefs = useRef({});
   const transformerRef = useRef();
@@ -119,6 +121,7 @@ function App() {
   }, [selectedId]);
 
   function addShape() {
+    if (!isLoggedIn) return;
     const id = String(Date.now());
     const newShape = {
       id,
@@ -132,14 +135,12 @@ function App() {
     yShapesMap.set(id, newShape);
   }
 
-  // --- Zoom: mouse wheel, centered on cursor position ---
   function handleWheel(e) {
     e.evt.preventDefault();
     const stage = e.target.getStage();
     const oldZoom = zoom;
     const pointer = stage.getPointerPosition();
 
-    // Position of the pointer relative to the canvas content, before zoom
     const mousePointTo = {
       x: (pointer.x - stagePos.x) / oldZoom,
       y: (pointer.y - stagePos.y) / oldZoom,
@@ -148,7 +149,7 @@ function App() {
     const direction = e.evt.deltaY > 0 ? -1 : 1;
     const zoomFactor = 1.05;
     let newZoom = direction > 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor;
-    newZoom = Math.max(0.3, Math.min(3, newZoom)); // clamp zoom between 30% and 300%
+    newZoom = Math.max(0.3, Math.min(3, newZoom));
 
     const newPos = {
       x: pointer.x - mousePointTo.x * newZoom,
@@ -159,11 +160,11 @@ function App() {
     setStagePos(newPos);
   }
 
-  // --- Pan: drag on empty canvas (select mode only) ---
   function handleStageMouseDown(e) {
     const clickedOnEmpty = e.target === e.target.getStage();
 
     if (toolMode === 'pen') {
+      if (!isLoggedIn) return;
       const stage = e.target.getStage();
       const pointer = stage.getPointerPosition();
       const pos = {
@@ -196,7 +197,6 @@ function App() {
     const stage = e.target.getStage();
     const pointer = stage.getPointerPosition();
 
-    // Broadcast cursor position (convert to canvas-space coordinates)
     const canvasPos = {
       x: (pointer.x - stagePos.x) / zoom,
       y: (pointer.y - stagePos.y) / zoom,
@@ -236,6 +236,7 @@ function App() {
   }
 
   function changeColor(color) {
+    if (!isLoggedIn) return;
     if (toolMode === 'pen') {
       setPenColor(color);
       return;
@@ -248,20 +249,23 @@ function App() {
   }
 
   function undo() {
+    if (!isLoggedIn) return;
     undoManager.undo();
   }
 
   function redo() {
+    if (!isLoggedIn) return;
     undoManager.redo();
   }
 
   function deleteSelected() {
-    if (!selectedId) return;
+    if (!isLoggedIn || !selectedId) return;
     yShapesMap.delete(selectedId);
     setSelectedId(null);
   }
 
   function handleTransformEnd(id) {
+    if (!isLoggedIn) return;
     const node = shapeRefs.current[id];
     if (!node) return;
 
@@ -283,6 +287,7 @@ function App() {
   }
 
   function handleDragEnd(id, node) {
+    if (!isLoggedIn) return;
     const shape = yShapesMap.get(id);
     if (shape) {
       yShapesMap.set(id, { ...shape, x: node.x(), y: node.y() });
@@ -293,12 +298,19 @@ function App() {
 
   return (
     <div>
+      <Auth onAuthChange={setSession} />
+
       <h1>My Whiteboard Project — Room: {roomName}</h1>
       <p style={{ color: connected ? 'green' : 'red' }}>
         {connected ? 'Connected to server' : 'Disconnected'}
       </p>
+      {!isLoggedIn && (
+        <p style={{ color: '#888', fontStyle: 'italic' }}>
+          You're viewing in read-only mode. Log in to edit.
+        </p>
+      )}
 
-      <button onClick={addShape}>Add Rectangle</button>
+      <button onClick={addShape} disabled={!isLoggedIn}>Add Rectangle</button>
       {' '}
       <button
         onClick={() => setToolMode('select')}
@@ -308,6 +320,7 @@ function App() {
       </button>
       <button
         onClick={() => setToolMode('pen')}
+        disabled={!isLoggedIn}
         style={{ fontWeight: toolMode === 'pen' ? 'bold' : 'normal' }}
       >
         Pen
@@ -317,6 +330,7 @@ function App() {
         <button
           key={color}
           onClick={() => changeColor(color)}
+          disabled={!isLoggedIn}
           style={{
             backgroundColor: color,
             width: 24,
@@ -327,12 +341,12 @@ function App() {
         />
       ))}
       {' '}
-      <button onClick={deleteSelected} disabled={!selectedId}>
+      <button onClick={deleteSelected} disabled={!isLoggedIn || !selectedId}>
         Delete Selected
       </button>
       {' '}
-      <button onClick={undo}>Undo</button>
-      <button onClick={redo}>Redo</button>
+      <button onClick={undo} disabled={!isLoggedIn}>Undo</button>
+      <button onClick={redo} disabled={!isLoggedIn}>Redo</button>
       {' '}
       <button onClick={resetView}>Reset View</button>
       <span style={{ marginLeft: 8, fontSize: 13 }}>{Math.round(zoom * 100)}%</span>
@@ -381,7 +395,7 @@ function App() {
                 width={shape.width}
                 height={shape.height}
                 fill={shape.fill}
-                draggable={toolMode === 'select'}
+                draggable={toolMode === 'select' && isLoggedIn}
                 onClick={() => toolMode === 'select' && setSelectedId(shape.id)}
                 onTap={() => toolMode === 'select' && setSelectedId(shape.id)}
                 onDragEnd={(e) => handleDragEnd(shape.id, e.target)}
