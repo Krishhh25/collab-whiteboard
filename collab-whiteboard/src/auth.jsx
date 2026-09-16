@@ -5,7 +5,7 @@ function Auth({ onAuthChange }) {
   const [session, setSession] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState('login'); // 'login' or 'signup'
+  const [mode, setMode] = useState('login');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -45,41 +45,52 @@ function Auth({ onAuthChange }) {
 
   if (session) {
     return (
-      <div style={{ marginBottom: 10 }}>
-        <span>Logged in as {session.user.email}</span>
-        {' '}
-        <button onClick={handleLogout}>Log out</button>
+      <div className="auth-panel">
+        <span className="auth-user">{session.user.email}</span>
+        <button className="icon-btn" onClick={handleLogout} title="Log out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
       </div>
     );
   }
 
   return (
-    <div style={{ marginBottom: 10 }}>
-      <form onSubmit={handleSubmit} style={{ display: 'inline' }}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button type="submit">{mode === 'login' ? 'Log In' : 'Sign Up'}</button>
-      </form>
-      {' '}
-      <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>
-        {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Log in'}
+    <form className="auth-panel" onSubmit={handleSubmit}>
+      <input
+        className="auth-input"
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      <input
+        className="auth-input"
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+      />
+      <button className="text-btn" type="submit">
+        {mode === 'login' ? 'Log in' : 'Sign up'}
       </button>
-      {' '}
-      <button onClick={handleGoogleLogin}>Sign in with Google</button>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-    </div>
+      <button
+        type="button"
+        className="auth-link-btn"
+        onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+      >
+        {mode === 'login' ? 'Sign up' : 'Log in'}
+      </button>
+      <button type="button" className="auth-link-btn" onClick={handleGoogleLogin}>
+        Google
+      </button>
+      {error && <p className="auth-error">{error}</p>}
+    </form>
   );
 }
 
