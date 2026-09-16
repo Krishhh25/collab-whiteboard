@@ -3,6 +3,7 @@ import { Stage, Layer, Rect, Line, Transformer } from 'react-konva';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import Auth from './Auth';
+import './App.css';
 
 const COLORS = ['#378ADD', '#D85A30', '#639922', '#D4537E', '#2C2C2A'];
 
